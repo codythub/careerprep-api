@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PaystackWebhookController;
+use App\Http\Controllers\Api\V1\PricingController;
 use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\ResumeController;
 use App\Http\Controllers\Api\V1\ReviewController;
@@ -12,6 +13,8 @@ Route::post('/v1/paystack/webhook', PaystackWebhookController::class)
     ->name('api.v1.paystack.webhook');
 
 Route::prefix('v1')->middleware('throttle:api')->group(function (): void {
+    Route::get('/pricing', PricingController::class)->name('api.v1.pricing');
+
     Route::post('/auth/register', [AuthController::class, 'register'])
         ->middleware('throttle:registration')
         ->name('api.v1.auth.register');

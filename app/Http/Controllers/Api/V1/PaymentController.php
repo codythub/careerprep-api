@@ -11,6 +11,7 @@ use App\PaymentStatus;
 use App\ResumeExtractionStatus;
 use App\Services\PaymentVerifier;
 use App\Services\PaystackClient;
+use App\Services\ReviewPricing;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
@@ -44,7 +45,7 @@ class PaymentController extends Controller
         return new PaymentResource($payment->load('review:id,payment_id'));
     }
 
-    public function store(StorePaymentRequest $request, PaystackClient $paystack): PaymentResource
+    public function store(StorePaymentRequest $request, PaystackClient $paystack, ReviewPricing $pricing): PaymentResource
     {
         Gate::authorize('create', Payment::class);
 
@@ -57,21 +58,13 @@ class PaymentController extends Controller
             ]);
         }
 
-        $amount = (int) config('services.paystack.review_amount');
-        $currency = strtoupper((string) config('services.paystack.currency'));
-        $secretKey = config('services.paystack.secret_key');
-
-        abort_if(
-            $amount < 1 || strlen($currency) !== 3 || ! is_string($secretKey) || $secretKey === '',
-            503,
-            'Payments are not configured.',
-        );
+        abort_unless($pricing->isAvailable(), 503, 'Payments are not configured.');
 
         $payment = $request->user()->payments()->create([
             'resume_id' => $resume->id,
             'reference' => 'CP-'.Str::ulid(),
-            'amount' => $amount,
-            'currency' => $currency,
+            'amount' => $pricing->amount(),
+            'currency' => $pricing->currency(),
             'status' => PaymentStatus::Pending,
         ]);
 
