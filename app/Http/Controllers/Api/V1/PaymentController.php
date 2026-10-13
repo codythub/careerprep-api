@@ -8,6 +8,7 @@ use App\Http\Resources\Api\V1\PaymentResource;
 use App\Models\Payment;
 use App\Models\Resume;
 use App\PaymentStatus;
+use App\ResumeExtractionStatus;
 use App\Services\PaymentVerifier;
 use App\Services\PaystackClient;
 use Illuminate\Http\Request;
@@ -49,6 +50,12 @@ class PaymentController extends Controller
 
         $resume = Resume::query()->findOrFail($request->integer('resume_id'));
         Gate::authorize('view', $resume);
+
+        if ($resume->extraction_status === ResumeExtractionStatus::Failed) {
+            throw ValidationException::withMessages([
+                'resume_id' => ['Text could not be read from this resume. Upload a text-based PDF before paying for a review.'],
+            ]);
+        }
 
         $amount = (int) config('services.paystack.review_amount');
         $currency = strtoupper((string) config('services.paystack.currency'));

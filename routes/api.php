@@ -37,6 +37,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function (): void {
         Route::post('/payments/{payment}/verify', [PaymentController::class, 'verify'])->name('payments.verify');
 
         Route::apiResource('reviews', ReviewController::class)->only(['index', 'store', 'show']);
+        Route::post('/reviews/{review}/retry', [ReviewController::class, 'retry'])->name('reviews.retry');
         Route::get('/reviews/{review}/download', [ReviewController::class, 'download'])
             ->name('reviews.download');
     });

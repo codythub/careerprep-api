@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\RetryReviewRequest;
 use App\Http\Requests\Api\V1\StoreReviewRequest;
 use App\Http\Resources\Api\V1\ReviewResource;
 use App\Models\Payment;
+use App\Models\Resume;
 use App\Models\Review;
 use App\Services\CreateReview;
+use App\Services\RetryReview;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -41,6 +44,20 @@ class ReviewController extends Controller
         $review = $createReview->handle($payment);
 
         return new ReviewResource($review->load('resume:id,original_name'));
+    }
+
+    public function retry(RetryReviewRequest $request, Review $review, RetryReview $retryReview): ReviewResource
+    {
+        Gate::authorize('view', $review);
+
+        $resume = null;
+
+        if ($request->has('resume_id')) {
+            $resume = Resume::query()->findOrFail($request->integer('resume_id'));
+            Gate::authorize('view', $resume);
+        }
+
+        return new ReviewResource($retryReview->handle($review, $resume)->load('resume:id,original_name'));
     }
 
     public function show(Review $review): ReviewResource

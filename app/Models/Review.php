@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'recommendations',
     'failure_reason',
     'completed_at',
+    'attempts',
 ])]
 class Review extends Model
 {
@@ -46,12 +47,32 @@ class Review extends Model
         return $this->belongsTo(Payment::class);
     }
 
+    public function hasAttemptsRemaining(): bool
+    {
+        return $this->attempts < config('reviews.max_attempts');
+    }
+
+    /**
+     * A failed review, or one whose attempt stalled while pending, may be processed again.
+     */
+    public function isRetryable(): bool
+    {
+        if (! $this->hasAttemptsRemaining()) {
+            return false;
+        }
+
+        return $this->status === ReviewStatus::Failed
+            || ($this->status === ReviewStatus::Pending
+                && $this->updated_at?->lte(now()->subMinutes(config('reviews.stale_pending_minutes'))));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'status' => ReviewStatus::class,
             'overall_score' => 'integer',
+            'attempts' => 'integer',
             'category_scores' => 'array',
             'weaknesses' => 'array',
             'recommendations' => 'array',
