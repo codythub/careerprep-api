@@ -17,11 +17,10 @@ class AuthController extends Controller
     public function register(RegisterRequest $request): JsonResponse
     {
         $user = User::create($request->validated());
-        $token = $user->createToken('careerprep-web')->plainTextToken;
 
         return response()->json([
             'data' => new UserResource($user),
-            'token' => $token,
+            ...$this->issueToken($user),
         ], 201);
     }
 
@@ -37,7 +36,7 @@ class AuthController extends Controller
 
         return response()->json([
             'data' => new UserResource($user),
-            'token' => $user->createToken('careerprep-web')->plainTextToken,
+            ...$this->issueToken($user),
         ]);
     }
 
@@ -51,5 +50,17 @@ class AuthController extends Controller
         $request->user()?->currentAccessToken()?->delete();
 
         return response()->json(['message' => 'Logged out successfully.']);
+    }
+
+    /** @return array{token: string, expires_at: string|null} */
+    private function issueToken(User $user): array
+    {
+        $minutes = config('sanctum.expiration');
+        $expiresAt = $minutes ? now()->addMinutes($minutes) : null;
+
+        return [
+            'token' => $user->createToken('careerprep-web', ['*'], $expiresAt)->plainTextToken,
+            'expires_at' => $expiresAt?->toISOString(),
+        ];
     }
 }
