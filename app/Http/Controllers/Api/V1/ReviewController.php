@@ -19,8 +19,11 @@ class ReviewController extends Controller
     {
         Gate::authorize('viewAny', Review::class);
 
+        $resumeId = $request->query('resume_id');
+
         $reviews = $request->user()->reviews()
             ->with('resume:id,original_name')
+            ->when(is_string($resumeId) && ctype_digit($resumeId), fn ($query) => $query->where('resume_id', (int) $resumeId))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(15);

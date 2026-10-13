@@ -161,6 +161,40 @@ class ReviewControllerTest extends TestCase
             ->assertSeeText('does not guarantee hiring outcomes');
     }
 
+    public function test_index_filters_by_resume_within_the_candidates_reviews(): void
+    {
+        $user = User::factory()->create();
+        $resume = Resume::factory()->for($user)->create();
+        $review = Review::factory()->for($user)->for($resume)->create();
+        Review::factory()->for($user)->create();
+        $otherReview = Review::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/reviews?resume_id='.$resume->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $review->id);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/reviews?resume_id='.$otherReview->resume_id)
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_cross_origin_download_exposes_filename_header_to_the_frontend(): void
+    {
+        config()->set('cors.allowed_origins', ['https://frontend.example']);
+        $user = User::factory()->create();
+        $review = Review::factory()->for($user)->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->get('/api/v1/reviews/'.$review->id.'/download', ['Origin' => 'https://frontend.example'])
+            ->assertOk()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://frontend.example')
+            ->assertHeader('Access-Control-Expose-Headers', 'Content-Disposition')
+            ->assertHeaderMissing('Access-Control-Allow-Credentials');
+    }
+
     private function strongResumeText(): string
     {
         return <<<'TEXT'

@@ -4,6 +4,7 @@ namespace Tests\Feature\Http\Controllers\Api\V1;
 
 use App\Models\Payment;
 use App\Models\Resume;
+use App\Models\Review;
 use App\Models\User;
 use App\PaymentStatus;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -32,6 +33,71 @@ class PaymentControllerTest extends TestCase
     {
         $this->postJson('/api/v1/payments')->assertUnauthorized();
         $this->postJson('/api/v1/payments/1/verify')->assertUnauthorized();
+        $this->getJson('/api/v1/payments')->assertUnauthorized();
+        $this->getJson('/api/v1/payments/1')->assertUnauthorized();
+    }
+
+    public function test_index_lists_only_the_candidates_payments_with_entitlement_state(): void
+    {
+        $user = User::factory()->create();
+        $available = Payment::factory()->for($user)->verified()->create();
+        $consumed = Payment::factory()->for($user)->verified()->create(['entitlement_consumed_at' => now()]);
+        $review = Review::factory()->for($user)->create(['resume_id' => $consumed->resume_id, 'payment_id' => $consumed->id]);
+        Payment::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/payments');
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('meta.per_page', 15);
+
+        $rows = collect($response->json('data'))->keyBy('id');
+
+        $this->assertSame('available', $rows[$available->id]['entitlement_status']);
+        $this->assertNull($rows[$available->id]['review_id']);
+        $this->assertSame('consumed', $rows[$consumed->id]['entitlement_status']);
+        $this->assertSame($review->id, $rows[$consumed->id]['review_id']);
+    }
+
+    public function test_index_filters_by_reference_within_the_candidates_payments(): void
+    {
+        $user = User::factory()->create();
+        $payment = Payment::factory()->for($user)->create(['reference' => 'CP-CALLBACK-1']);
+        Payment::factory()->for($user)->create();
+        Payment::factory()->create(['reference' => 'CP-OTHER-USER']);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/payments?reference=CP-CALLBACK-1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $payment->id);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/payments?reference=CP-OTHER-USER')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_show_returns_own_payment_and_404_for_another_candidates(): void
+    {
+        $user = User::factory()->create();
+        $payment = Payment::factory()->for($user)->create();
+        $otherPayment = Payment::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/payments/'.$payment->id)
+            ->assertOk()
+            ->assertJsonPath('data.id', $payment->id)
+            ->assertJsonPath('data.reference', $payment->reference)
+            ->assertJsonPath('data.status', 'initialized')
+            ->assertJsonPath('data.entitlement_status', 'unavailable')
+            ->assertJsonPath('data.review_id', null);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/payments/'.$otherPayment->id)
+            ->assertNotFound();
     }
 
     public function test_valid_request_initializes_transaction_and_returns_201(): void

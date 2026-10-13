@@ -10,6 +10,8 @@ use App\Models\Resume;
 use App\PaymentStatus;
 use App\Services\PaymentVerifier;
 use App\Services\PaystackClient;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +20,29 @@ use UnexpectedValueException;
 
 class PaymentController extends Controller
 {
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        Gate::authorize('viewAny', Payment::class);
+
+        $reference = $request->query('reference');
+
+        $payments = $request->user()->payments()
+            ->with('review:id,payment_id')
+            ->when(is_string($reference) && $reference !== '', fn ($query) => $query->where('reference', $reference))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(15);
+
+        return PaymentResource::collection($payments);
+    }
+
+    public function show(Payment $payment): PaymentResource
+    {
+        Gate::authorize('view', $payment);
+
+        return new PaymentResource($payment->load('review:id,payment_id'));
+    }
+
     public function store(StorePaymentRequest $request, PaystackClient $paystack): PaymentResource
     {
         Gate::authorize('create', Payment::class);

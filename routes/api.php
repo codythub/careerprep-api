@@ -31,7 +31,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function (): void {
             ->middleware('throttle:resume-uploads')
             ->name('resumes.store');
 
+        Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
         Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
+        Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
         Route::post('/payments/{payment}/verify', [PaymentController::class, 'verify'])->name('payments.verify');
 
         Route::apiResource('reviews', ReviewController::class)->only(['index', 'store', 'show']);
