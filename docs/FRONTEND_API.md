@@ -1,6 +1,6 @@
 # CareerPrep Frontend API Contract (`/api/v1`)
 
-This contract was taken from the code in `routes/api.php`, `app/Http/**` and `app/Services/**` on 2026-10-13. Statements marked **(tested)** are covered by the feature suite. **(code)** means the behavior was confirmed by reading the code but has no test.
+This contract was taken from the code in `routes/api.php`, `app/Http/**` and `app/Services/**` on 2026-10-13 (updated after the production-readiness changes). Statements marked **(tested)** are covered by the feature suite. **(code)** means the behavior was confirmed by reading the code but has no test.
 
 ## Conventions
 
@@ -23,7 +23,11 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
   - The API routes have no session middleware, and `statefulApi()` is not enabled.
   - CORS has `supports_credentials = false`, so the frontend must use `credentials: "omit"`.
   - `GET /sanctum/csrf-cookie` is not needed.
-- **Tokens do not expire.** `config/sanctum.php` is not published, so Sanctum's default `expiration = null` applies. Logout revokes only the token used for that request. Each login creates a new token named `careerprep-web`.
+- **Tokens expire** after `SANCTUM_EXPIRATION` minutes (default 10080, which is 7 days; `0` disables expiry).
+  - Login and registration return `expires_at`, an ISO timestamp, or `null` when expiry is disabled.
+  - Expiry is measured from token creation, so tokens issued before expiry was configured also expire by age **(tested)**.
+  - An expired token gets the same `401 { "message": "Unauthenticated." }` as an invalid one **(tested)**. The frontend should clear the stored token and send the user to sign in, which `useCandidateAuth` already does on any 401. There is no refresh endpoint; the user signs in again.
+  - Logout revokes only the token used for that request. Each login creates a new token named `careerprep-web`.
 - **Missing or invalid token:** `401 { "message": "Unauthenticated." }` **(tested)**. Guests are never redirected.
 
 ### Error shapes
@@ -37,7 +41,7 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
 | 422 | Validation or business-rule failure | `{ "message": "...", "errors": { "field": ["..."] } }` |
 | 429 | Rate limit hit | `{ "message": "Too Many Attempts." }` |
 | 500 | Unexpected error, including Paystack HTTP failures | `{ "message": "Server Error" }` (production must use `APP_DEBUG=false`) |
-| 503 | Paystack is not configured on the server | `{ "message": "Payments are not configured." }` |
+| 503 | Paystack is not configured on the server. Check `GET /pricing` first to avoid this. | `{ "message": "Payments are not configured." }` |
 
 ### Rate limits (`AppServiceProvider`)
 
@@ -51,9 +55,9 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
 
 ### CORS
 
-- `config/cors.php` allows exactly one origin: `FRONTEND_URL`.
-  - Vercel **preview** deployment URLs are **not** allowed.
-  - Additional origins require a config change, either a list or `allowed_origins_patterns`.
+- `FRONTEND_URL` is a comma-separated list of exact origins. Trailing slashes and spaces are tolerated **(tested)**.
+- Vercel preview URLs (`https://<VERCEL_PREVIEW_PROJECT>-<id>-<VERCEL_PREVIEW_SCOPE>.vercel.app`) are allowed only when both variables are set **and** `APP_ENV` is not `production`. In other words, previews must use a staging API **(tested)**.
+- Credentials are never allowed.
 - `Content-Disposition` is exposed, so a cross-origin `fetch` can read the download filename **(tested)**.
 
 ## Resource shapes
@@ -91,10 +95,12 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
   "assessment_version": "rule-based-v1", "overall_score": 72,
   "category_scores": { "contact_information": 80, "...": 0 },
   "weaknesses": ["..."], "recommendations": ["..."], "failure_reason": null,
+  "attempts": 1, "max_attempts": 3, "can_retry": false,
   "disclaimer": "This automated rule-based review is guidance only. ...",
   "completed_at": "...", "created_at": "..." }
 ```
 - `status` is one of `pending | completed | failed`.
+- `can_retry` is true when the review is `failed`, or has been `pending` for more than 10 minutes, and `attempts < max_attempts`.
 - Scores are 0–100.
 - `category_scores` is an **object** keyed by category slug, not an array.
 - `weaknesses` and `recommendations` are arrays of strings.
@@ -102,7 +108,17 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
 
 ## Endpoints
 
-All endpoints except register, login and the webhook require a bearer token.
+All endpoints except pricing, register, login and the webhook require a bearer token.
+
+### Pricing (public)
+
+| Method and path | Success |
+|---|---|
+| `GET /pricing` | 200 `{ "data": { "review": { "amount": 500000, "currency": "NGN", "available": true } } }` **(tested)** |
+
+- `amount` is in the smallest currency unit, so divide by 100 to display naira.
+- When Paystack is not fully configured, the response is `{ "amount": null, "currency": null, "available": false }`. Hide or disable checkout in that case.
+- The value comes from the same server config that `POST /payments` charges. A client-sent `amount` or `currency` is ignored **(tested)**.
 
 ### Auth and profile
 
@@ -136,7 +152,7 @@ Changing `email` clears `email_verified_at`. That field is not exposed, and emai
 | Method and path | Request | Success | Failures |
 |---|---|---|---|
 | `GET /payments` | `?page`, optional `?reference=CP-...` | 200, paginated list of Payment objects (own only) **(tested)** | 401 |
-| `POST /payments` | `{ "resume_id": int }` | **201** `{ data: Payment }`. `status` is `initialized` and includes `authorization_url` **(tested)**. | 422 (missing or unknown `resume_id`), 404 (another user's resume, **(tested)**), 503 (not configured), 500 (Paystack error; the payment is marked `failed`) |
+| `POST /payments` | `{ "resume_id": int }` | **201** `{ data: Payment }`. `status` is `initialized` and includes `authorization_url` **(tested)**. | 422 (missing or unknown `resume_id`, or the resume's `extraction_status` is `failed`, **(tested)**), 404 (another user's resume, **(tested)**), 503 (not configured), 500 (Paystack error; the payment is marked `failed`) |
 | `GET /payments/{id}` | — | 200 `{ data: Payment }` **(tested)** | 404 if it belongs to another user **(tested)** |
 | `POST /payments/{id}/verify` | no body | 200 `{ data: Payment }` with `status: "verified"` **(tested)** | 422 `errors.payment` if Paystack does not report success with the expected reference, amount and currency **(tested for amount)**. 404, 500. |
 
@@ -176,6 +192,7 @@ On a valid request:
 |---|---|---|---|
 | `GET /reviews` | `?page`, optional `?resume_id=int` | 200, paginated list of Review objects (own only) **(tested)** | 401 |
 | `POST /reviews` | `{ "payment_id": int }` | **201** `{ data: Review }` **(tested)** | 422 `errors.payment_id`: "This payment has not been verified." **(tested)** or "This review entitlement has already been used." **(tested)**. 422 for a missing or unknown ID. 404 for another user's payment. |
+| `POST /reviews/{id}/retry` | Optional `{ "resume_id": int }` to switch to another of the candidate's own resumes | 200 `{ data: Review }`, already reprocessed. `attempts` is incremented. **(tested)** | 422 `errors.review`: "This review has already been completed." / "This review is still being processed." / "This review has no retry attempts remaining. Please contact support." **(tested)**. 404 for another user's review or resume **(tested)**. |
 | `GET /reviews/{id}` | — | 200 `{ data: Review }` | 404 if it belongs to another user **(tested)** |
 | `GET /reviews/{id}/download` | — | 200 `text/plain; charset=UTF-8`, `Content-Disposition: attachment; filename="careerprep-review-{id}.txt"` **(tested)** | 404 |
 
@@ -183,7 +200,15 @@ On a valid request:
 - One verified payment gives one review.
 - `CreateReview` checks the entitlement and consumes it inside a transaction that locks the payment row. In addition, `reviews.payment_id` is `UNIQUE`.
 - The review is assessed synchronously, so the 201 response already contains the final `status`.
-- **The entitlement is consumed even when the review ends in `failed`**, for example when the PDF text can't be extracted. The frontend should warn the user before they pay for a resume whose `extraction_status` is `failed`.
+
+**Recovery policy for technical failures:**
+- A review can fail because the PDF text can't be extracted, or because of an unexpected assessment error.
+- The payment's entitlement stays consumed, but the same review may be reprocessed with `POST /reviews/{id}/retry`. That covers up to `REVIEW_MAX_ATTEMPTS` attempts in total (default 3).
+- A retry may switch the review to another resume the candidate owns, typically a re-exported text-based PDF. `payment.resume_id` keeps the original record.
+- A retry takes a row lock on the review. A duplicate retry while one is running, or a retry after completion, is rejected with 422. A retry never restores the payment entitlement, so `POST /reviews` for the same payment remains 422 **(tested)**.
+- A review stuck in `pending` because its process died becomes retryable after 10 minutes **(tested)**.
+- When attempts run out, `can_retry` is false. The candidate should contact support, and refunds are manual through Paystack.
+- Prevention: `POST /payments` is refused for a resume whose `extraction_status` is `failed`.
 
 ## Frontend mismatches found in `careerprep-ng/src/lib/laravel` (not changed here)
 
@@ -191,4 +216,8 @@ On a valid request:
 2. `downloadReview` falls back to a filename ending in `.pdf`, but the file is `.txt`. The real filename is now readable because `Content-Disposition` is exposed.
 3. The payment callback page depends only on `localStorage` (`careerprep.pendingPayment`). It can now fall back to `GET /payments?reference=` using the `reference` query parameter Paystack appends.
 4. The resume detail page filters reviews from the first page of `GET /reviews` only. Use `GET /reviews?resume_id=`.
-5. The bearer token is kept in `localStorage` and never expires (see Authentication). Any XSS bug would expose a long-lived token.
+5. The bearer token is kept in `localStorage`, so any XSS bug would expose it. Expiry now bounds that exposure to `SANCTUM_EXPIRATION`. The frontend could also use `expires_at` to sign the user out proactively.
+6. The frontend doesn't use these new fields and endpoints yet:
+   - `GET /pricing`, to display the price
+   - `POST /reviews/{id}/retry` together with `can_retry`, `attempts` and `max_attempts`, to offer a retry on failed reviews
+   - the new 422 on `POST /payments` for unreadable resumes, which should be shown on the resume page
