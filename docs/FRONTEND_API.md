@@ -16,6 +16,22 @@ This contract was taken from the code in `routes/api.php`, `app/Http/**` and `ap
   ```
   Lists are ordered newest first (`created_at DESC, id DESC`).
 
+### Account types
+There are two separate account types, and **the server enforces the separation**; the frontend only hides links.
+
+| Routes | Candidate | Admin |
+|---|---|---|
+| `GET /pricing`, `POST /auth/register`, `POST /auth/login` | ✓ | ✓ (login) |
+| `GET /auth/user`, `POST /auth/logout`, `GET /profile`, `PATCH /profile` | ✓ | ✓ |
+| `/resumes*`, `/payments*`, `/reviews*` (including verify, retry and download) | ✓ | **403** **(tested for every route)** |
+| `/admin/*` | **403** **(tested for every route)** | ✓ |
+
+- **Register** always creates a candidate. `role` is never accepted as input anywhere **(tested)**.
+- **Admin accounts** are created only on the server, as new accounts. They never become candidates, and candidates never become admins.
+- **Wrong account type gets 403, never 404.** The role check runs before the record lookup, so even IDs that don't exist return 403. The response is `403 { "message": "This action is unauthorized." }` **(tested)**.
+- **No candidate data on admins.** Resumes, payments and reviews can never be created for, or moved to, an admin account; the server refuses at the data layer **(tested)**.
+- **Frontend routing after login:** send `role: "admin"` to the admin area and `role: "candidate"` to the dashboard. An admin opening `/dashboard` should be redirected rather than shown errors.
+
 ### Authentication: Sanctum bearer tokens only
 
 - Register or log in to receive a plain-text token. Send it on every protected call as `Authorization: Bearer <token>`.
@@ -219,8 +235,12 @@ On a valid request:
 ## Admin API (`/api/v1/admin`)
 
 ### Access
-- **Granting access.** Admins are created only on the server, with `php artisan careerprep:make-admin {email}`. It promotes an existing account. If the email doesn't exist yet, it offers to create the admin account, asking for the name and password at hidden prompts; this needs an interactive terminal **(tested)**. Use `--revoke` to return a user to `candidate`; revoking also deletes all of that user's tokens **(tested)**. No HTTP endpoint grants or changes a role **(tested)**.
-- **Middleware.** Every route runs `throttle:api` (60/min per user), then `auth:sanctum`, then `EnsureAdmin`. The role is re-read from the database on every request, so a demoted admin is refused immediately, even with a valid token **(tested)**.
+- **Creating an admin.** Run `php artisan careerprep:create-admin {email} [--name="Full Name"]` on the server. It always creates a **new** account with the admin role, refuses an email that already exists, and never promotes a candidate **(tested)**.
+  - It asks for the name if `--name` isn't given, then the password twice at hidden prompts. Registration's password rules apply: at least 8 characters, at most 72.
+  - It needs an interactive terminal **(tested)**.
+- **Removing an admin.** Run `php artisan careerprep:remove-admin {email}`. It asks for confirmation (`--force` skips it), revokes all of that admin's tokens and deletes the account **(tested)**. It refuses candidate accounts and admin accounts that hold candidate data **(tested)**. Audit entries keep the deleted admin's email in `actor_email` **(tested)**.
+- **No HTTP endpoint creates, grants or changes a role** **(tested)**.
+- **Middleware.** Every route runs `throttle:api` (60/min per user), then `auth:sanctum`, then `EnsureAdmin`. The role is re-read from the database on every request **(tested)**.
 - **The admin check runs before record lookup.** Non-admins get 403 even for IDs that don't exist, so they can't tell which records exist **(tested)**.
 
 | Case | Response |
@@ -275,11 +295,11 @@ The `*_count` fields appear on the user list and the user detail.
 
 **AuditLogEntry**
 ```json
-{ "id": 5, "actor_id": 1, "actor": UserSummary | null, "action": "payment.mark_refunded",
+{ "id": 5, "actor_id": 1, "actor_email": "ops@example.com", "actor": UserSummary | null, "action": "payment.mark_refunded",
   "target_type": "payment", "target_id": 12, "before": { ... }, "after": { ... },
   "ip_address": "203.0.113.4", "created_at": "..." }
 ```
-- `actor` is `null` if that admin account was deleted.
+- `actor` and `actor_id` are `null` if that admin account was deleted. `actor_email` always records who acted.
 - `action` is one of `resume.download | payment.reverify | payment.mark_refunded | review.retry | review.grant_attempt`.
 - `before` and `after` are small summaries (status, attempts, entitlement, note). They never contain resume text, payloads or paths.
 

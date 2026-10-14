@@ -16,7 +16,7 @@ Implemented: candidate authentication/profiles, private resume management, Payst
 
 The Next.js frontend (`careerprep-ng`, Vercel) already uses this API for the candidate dashboard (`src/lib/laravel/*`). Its admin panel, public job board and content pages still read Prisma tables directly; Laravel has no equivalent yet (see `IMPLEMENTATION_STATUS.md`).
 
-Admin API (`/api/v1/admin`): role-gated support tools for the candidate product (stats, users, resumes incl. PDF download, payments incl. re-verify and recording manual refunds, reviews incl. retry override and granting attempts) with an audit log of every admin write. Admins are created only with `php artisan careerprep:make-admin {email}`.
+Admin API (`/api/v1/admin`): role-gated support tools for the candidate product (stats, users, resumes incl. PDF download, payments incl. re-verify and recording manual refunds, reviews incl. retry override and granting attempts) with an audit log of every admin write. Admin and candidate accounts are separate types: admins are created only as new accounts with `php artisan careerprep:create-admin {email}`, removed with `careerprep:remove-admin {email}`, and are refused on candidate routes.
 
 Not implemented: job board/content APIs and admin tools for them, production deployment configuration, AI analysis.
 
@@ -42,6 +42,6 @@ The frontend API contract is documented in `docs/FRONTEND_API.md`; deployment st
 - Extracted text is forced to valid UTF-8 (PostgreSQL rejects invalid bytes) and must contain at least 30 words with mostly-letter content; otherwise extraction is `failed` with a user-facing reason, so payment is refused and no review is assessed on unreadable text. Encrypted, scanned and image-only PDFs fail this way.
 - Assessment rules are implemented by `ResumeAssessor` and versioned as `rule-based-v1`.
 - Review scores are heuristic guidance, not real ATS scores and not hiring guarantees.
-- Users have a `role` (`candidate` default, `admin`). It is not mass-assignable and no endpoint changes it; `EnsureAdmin` re-reads it on every admin request and runs before route model binding so non-admins always get 403.
+- Users have a `role` (`candidate` default, `admin`). It is not mass-assignable and nothing changes it after creation. `EnsureAdmin` and `EnsureCandidate` re-read it on every request and run before route model binding, so the wrong account type always gets 403. Resumes, payments and reviews refuse to belong to an admin (model `saving` guard).
 - Admin writes (and resume downloads) are recorded in `admin_audit_logs` with actor, action, target, before/after summaries and IP. Summaries never include resume text, provider payloads, storage paths or secrets.
 - `refunded` is an admin-recorded payment status for refunds made by hand in Paystack; it never moves money, makes an unused entitlement unavailable, blocks candidate retries, and is never reverted to `verified` by the webhook or verification.

@@ -57,7 +57,9 @@ Vercel preview deployments should never call the production API. CORS ignores th
   - Register, upload, pay with test keys, and review end to end against PostgreSQL.
   - Check that two simultaneous `POST /reviews` calls for one payment produce exactly one review. The tests cannot exercise PostgreSQL row locks because they run on SQLite.
 
-- [ ] Create the first admin after migrating: run `php artisan careerprep:make-admin <email>` on the server. It creates the account (name and password at hidden prompts), or promotes an existing one. Use `--revoke` to remove access (this also signs that user out everywhere). Keep the number of admins small, and review `GET /api/v1/admin/audit-log` periodically.
+- [ ] Create the first admin after migrating, with `php artisan careerprep:create-admin <email> --name="Full Name"` on the server. Use a dedicated email that has never been registered as a candidate. The password is entered at a hidden prompt.
+  - To remove an admin: `php artisan careerprep:remove-admin <email>`. This revokes its tokens and deletes the account.
+  - Keep the number of admins small, and review `GET /api/v1/admin/audit-log` periodically.
 
 ## 4. Private resume storage (Cloudflare R2)
 

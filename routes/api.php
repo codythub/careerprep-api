@@ -35,20 +35,22 @@ Route::prefix('v1')->middleware('throttle:api')->group(function (): void {
         Route::get('/profile', [ProfileController::class, 'show'])->name('api.v1.profile.show');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('api.v1.profile.update');
 
-        Route::apiResource('resumes', ResumeController::class)->only(['index', 'show', 'destroy']);
-        Route::post('/resumes', [ResumeController::class, 'store'])
-            ->middleware('throttle:resume-uploads')
-            ->name('resumes.store');
+        Route::middleware('candidate')->group(function (): void {
+            Route::apiResource('resumes', ResumeController::class)->only(['index', 'show', 'destroy']);
+            Route::post('/resumes', [ResumeController::class, 'store'])
+                ->middleware('throttle:resume-uploads')
+                ->name('resumes.store');
 
-        Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
-        Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
-        Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
-        Route::post('/payments/{payment}/verify', [PaymentController::class, 'verify'])->name('payments.verify');
+            Route::get('/payments', [PaymentController::class, 'index'])->name('payments.index');
+            Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store');
+            Route::get('/payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
+            Route::post('/payments/{payment}/verify', [PaymentController::class, 'verify'])->name('payments.verify');
 
-        Route::apiResource('reviews', ReviewController::class)->only(['index', 'store', 'show']);
-        Route::post('/reviews/{review}/retry', [ReviewController::class, 'retry'])->name('reviews.retry');
-        Route::get('/reviews/{review}/download', [ReviewController::class, 'download'])
-            ->name('reviews.download');
+            Route::apiResource('reviews', ReviewController::class)->only(['index', 'store', 'show']);
+            Route::post('/reviews/{review}/retry', [ReviewController::class, 'retry'])->name('reviews.retry');
+            Route::get('/reviews/{review}/download', [ReviewController::class, 'download'])
+                ->name('reviews.download');
+        });
 
         Route::prefix('admin')->middleware('admin')->name('api.v1.admin.')->group(function (): void {
             Route::get('/stats', AdminStatsController::class)->name('stats');

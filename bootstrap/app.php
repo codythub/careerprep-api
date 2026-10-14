@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureCandidate;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,11 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(null);
         $middleware->alias([
             'admin' => EnsureAdmin::class,
+            'candidate' => EnsureCandidate::class,
         ]);
 
-        // Check the admin role before route model binding, so non-admins get 403
+        // Check the role before route model binding, so the wrong account type gets 403
         // rather than learning which record IDs exist from 404s.
         $middleware->prependToPriorityList(SubstituteBindings::class, EnsureAdmin::class);
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureCandidate::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'actor_id',
+    'actor_email',
     'action',
     'target_type',
     'target_id',

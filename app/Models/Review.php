@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCandidate;
 use App\PaymentStatus;
 use App\ReviewStatus;
 use Database\Factories\ReviewFactory;
@@ -29,7 +30,7 @@ class Review extends Model
     public const DISCLAIMER = 'This automated rule-based review is guidance only. It is not an ATS score and does not guarantee hiring outcomes.';
 
     /** @use HasFactory<ReviewFactory> */
-    use HasFactory;
+    use BelongsToCandidate, HasFactory;
 
     /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo

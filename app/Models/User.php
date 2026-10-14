@@ -21,8 +21,8 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
-     * `role` is deliberately not fillable: it can only be changed by the
-     * careerprep:make-admin console command.
+     * `role` is deliberately not fillable and never changes after creation:
+     * admins are created only by the careerprep:create-admin console command.
      *
      * @var array<string, mixed>
      */

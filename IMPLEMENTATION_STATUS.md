@@ -19,7 +19,8 @@
 - Full automated suite verified in randomized order: 45 tests and 198 assertions passing on 2026-10-03.
 - 2026-10-13 frontend-integration audit: added `GET /payments` (with `?reference=` lookup), `GET /payments/{payment}`, `GET /reviews?resume_id=`, and CORS exposure of `Content-Disposition`. Suite: 50 tests, 235 assertions passing. Contract: `docs/FRONTEND_API.md`.
 - 2026-10-13 production readiness: git repository initialised; review retry/recovery policy (`POST /reviews/{review}/retry`, `REVIEW_MAX_ATTEMPTS`, `reviews.attempts` column); payments refused for unreadable resumes; public `GET /pricing`; configurable Sanctum expiry (`SANCTUM_EXPIRATION`, default 7 days) with `expires_at` in auth responses; multi-origin CORS with staging-only Vercel previews. Suite: 73 tests, 361 assertions passing. Deployment steps: `docs/DEPLOYMENT_CHECKLIST.md`.
-- 2026-10-14 admin API: `users.role` + `careerprep:make-admin` command, `EnsureAdmin` middleware, 15 routes under `/api/v1/admin` (stats, users, resumes + audited PDF download, payments + re-verify + mark-refunded, reviews + retry override + grant-attempt, audit log), `refunded` payment status, `reviews.extra_attempts`, `admin_audit_logs`. Suite: 164 tests, 744 assertions passing on SQLite and on a scratch PostgreSQL database.
+- 2026-10-14 admin API: `users.role`, admin commands (now `careerprep:create-admin` / `careerprep:remove-admin`), `EnsureAdmin` middleware, 15 routes under `/api/v1/admin` (stats, users, resumes + audited PDF download, payments + re-verify + mark-refunded, reviews + retry override + grant-attempt, audit log), `refunded` payment status, `reviews.extra_attempts`, `admin_audit_logs`. Suite: 164 tests, 744 assertions passing on SQLite and on a scratch PostgreSQL database.
+- 2026-10-14 account separation: candidate routes (`/resumes*`, `/payments*`, `/reviews*`) refuse admins (`EnsureCandidate`, 403); `/auth/*`, `/profile` and `/pricing` are shared. `careerprep:make-admin` was replaced by `careerprep:create-admin` (new accounts only) and `careerprep:remove-admin` (revoke tokens + delete; never demote). A model-level guard stops resumes, payments and reviews from belonging to an admin. Audit entries now keep `actor_email`. Suite: 199 tests, 897 assertions passing on SQLite and on a scratch PostgreSQL database.
 - Composer manifest and installed PHP platform requirements verified.
 
 ## Pending
@@ -31,7 +32,8 @@
 - Provide Paystack secret key, review price, currency, callback URL, and webhook URL.
 - Fix the frontend mismatches listed at the end of `docs/FRONTEND_API.md`.
 - Product decision on the public site and its admin tools (below). The candidate-product admin API is built (2026-10-14).
-- Run the 2026-10-13 admin migrations on each environment and create the first admin with `php artisan careerprep:make-admin {email}`.
+- Run the admin migrations on each environment and create the first admin with `php artisan careerprep:create-admin {email}`.
+- Decide what to do with admin id 1 (`lanre.malumi@gmail.com`), which was promoted from a candidate before account separation and owns 1 resume. The new rules don't change existing data. Because of that resume, `remove-admin` refuses to delete it.
 - Vercel deployment configuration.
 
 ## Known blockers

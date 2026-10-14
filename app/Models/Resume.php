@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCandidate;
 use App\ResumeExtractionStatus;
 use Database\Factories\ResumeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,7 +25,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Resume extends Model
 {
     /** @use HasFactory<ResumeFactory> */
-    use HasFactory;
+    use BelongsToCandidate, HasFactory;
 
     /**
      * @return BelongsTo<User, $this>

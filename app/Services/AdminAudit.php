@@ -21,6 +21,7 @@ class AdminAudit
     {
         return AdminAuditLog::query()->create([
             'actor_id' => $this->request->user()?->getKey(),
+            'actor_email' => $this->request->user()?->email,
             'action' => $action,
             'target_type' => strtolower(class_basename($target)),
             'target_id' => $target->getKey(),

@@ -13,6 +13,7 @@ class AdminAuditLogResource extends JsonResource
         return [
             'id' => $this->id,
             'actor_id' => $this->actor_id,
+            'actor_email' => $this->actor_email,
             'actor' => $this->whenLoaded('actor', fn () => $this->actor ? new UserSummaryResource($this->actor) : null),
             'action' => $this->action,
             'target_type' => $this->target_type,
