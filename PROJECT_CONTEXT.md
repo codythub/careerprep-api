@@ -16,7 +16,9 @@ Implemented: candidate authentication/profiles, private resume management, Payst
 
 The Next.js frontend (`careerprep-ng`, Vercel) already uses this API for the candidate dashboard (`src/lib/laravel/*`). Its admin panel, public job board and content pages still read Prisma tables directly; Laravel has no equivalent yet (see `IMPLEMENTATION_STATUS.md`).
 
-Not implemented: admin features, job board/content APIs, production deployment configuration, AI analysis.
+Admin API (`/api/v1/admin`): role-gated support tools for the candidate product (stats, users, resumes incl. PDF download, payments incl. re-verify and recording manual refunds, reviews incl. retry override and granting attempts) with an audit log of every admin write. Admins are created only with `php artisan careerprep:make-admin {email}`.
+
+Not implemented: job board/content APIs and admin tools for them, production deployment configuration, AI analysis.
 
 The frontend API contract is documented in `docs/FRONTEND_API.md`; deployment steps in `docs/DEPLOYMENT_CHECKLIST.md`.
 
@@ -36,6 +38,10 @@ The frontend API contract is documented in `docs/FRONTEND_API.md`; deployment st
 - Each verified payment exposes one review entitlement. Creating a review consumes it atomically, and `reviews.payment_id` is unique.
 - Technical review failures are recoverable: the consumed entitlement covers up to `REVIEW_MAX_ATTEMPTS` processing attempts of the same review row (optionally switching to another owned resume); refunds beyond that are manual. Payments are refused for resumes whose extraction already failed.
 - PDF extraction runs synchronously after upload and is retried when a review starts if needed. Status is persisted as `pending`, `succeeded`, or `failed`.
-- The dependency-free PDF extractor supports common uncompressed and Flate-compressed text streams. Unsupported or encrypted PDFs fail safely; the extractor contract allows a fuller parser later.
+- PDF text is extracted with `smalot/pdfparser` (pure PHP, LGPL-3.0, pinned `~2.12.5`), which decodes font encodings and ToUnicode maps such as the Identity-H fonts used by Google Docs and Word exports. The earlier dependency-free extractor produced garbage for those PDFs and was removed.
+- Extracted text is forced to valid UTF-8 (PostgreSQL rejects invalid bytes) and must contain at least 30 words with mostly-letter content; otherwise extraction is `failed` with a user-facing reason, so payment is refused and no review is assessed on unreadable text. Encrypted, scanned and image-only PDFs fail this way.
 - Assessment rules are implemented by `ResumeAssessor` and versioned as `rule-based-v1`.
 - Review scores are heuristic guidance, not real ATS scores and not hiring guarantees.
+- Users have a `role` (`candidate` default, `admin`). It is not mass-assignable and no endpoint changes it; `EnsureAdmin` re-reads it on every admin request and runs before route model binding so non-admins always get 403.
+- Admin writes (and resume downloads) are recorded in `admin_audit_logs` with actor, action, target, before/after summaries and IP. Summaries never include resume text, provider payloads, storage paths or secrets.
+- `refunded` is an admin-recorded payment status for refunds made by hand in Paystack; it never moves money, makes an unused entitlement unavailable, blocks candidate retries, and is never reverted to `verified` by the webhook or verification.

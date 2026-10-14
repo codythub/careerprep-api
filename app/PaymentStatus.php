@@ -8,4 +8,5 @@ enum PaymentStatus: string
     case Initialized = 'initialized';
     case Verified = 'verified';
     case Failed = 'failed';
+    case Refunded = 'refunded';
 }

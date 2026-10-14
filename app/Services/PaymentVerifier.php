@@ -18,7 +18,8 @@ class PaymentVerifier
         return DB::transaction(function () use ($payment, $providerData): Payment {
             $lockedPayment = Payment::query()->lockForUpdate()->findOrFail($payment->getKey());
 
-            if ($lockedPayment->status === PaymentStatus::Verified) {
+            // Verified payments are idempotent; refunded payments must never be re-verified.
+            if (in_array($lockedPayment->status, [PaymentStatus::Verified, PaymentStatus::Refunded], true)) {
                 return $lockedPayment;
             }
 

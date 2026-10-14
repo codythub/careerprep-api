@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'provider_payload',
     'verified_at',
     'entitlement_consumed_at',
+    'refunded_at',
+    'refund_note',
 ])]
 class Payment extends Model
 {
@@ -46,6 +48,16 @@ class Payment extends Model
         return $this->hasOne(Review::class);
     }
 
+    /** available = verified and unused; consumed = a review was created; otherwise unavailable. */
+    public function entitlementStatus(): string
+    {
+        if ($this->entitlement_consumed_at !== null) {
+            return 'consumed';
+        }
+
+        return $this->status === PaymentStatus::Verified ? 'available' : 'unavailable';
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -55,6 +67,7 @@ class Payment extends Model
             'provider_payload' => 'array',
             'verified_at' => 'datetime',
             'entitlement_consumed_at' => 'datetime',
+            'refunded_at' => 'datetime',
         ];
     }
 }

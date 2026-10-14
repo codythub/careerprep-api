@@ -25,7 +25,7 @@ class ReviewController extends Controller
         $resumeId = $request->query('resume_id');
 
         $reviews = $request->user()->reviews()
-            ->with('resume:id,original_name')
+            ->with(['resume:id,original_name', 'payment:id,status'])
             ->when(is_string($resumeId) && ctype_digit($resumeId), fn ($query) => $query->where('resume_id', (int) $resumeId))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -43,7 +43,7 @@ class ReviewController extends Controller
 
         $review = $createReview->handle($payment);
 
-        return new ReviewResource($review->load('resume:id,original_name'));
+        return new ReviewResource($review->load(['resume:id,original_name', 'payment:id,status']));
     }
 
     public function retry(RetryReviewRequest $request, Review $review, RetryReview $retryReview): ReviewResource
@@ -57,14 +57,14 @@ class ReviewController extends Controller
             Gate::authorize('view', $resume);
         }
 
-        return new ReviewResource($retryReview->handle($review, $resume)->load('resume:id,original_name'));
+        return new ReviewResource($retryReview->handle($review, $resume)->load(['resume:id,original_name', 'payment:id,status']));
     }
 
     public function show(Review $review): ReviewResource
     {
         Gate::authorize('view', $review);
 
-        return new ReviewResource($review->load('resume:id,original_name'));
+        return new ReviewResource($review->load(['resume:id,original_name', 'payment:id,status']));
     }
 
     public function download(Review $review): Response

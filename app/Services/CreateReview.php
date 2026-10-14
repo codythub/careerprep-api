@@ -18,6 +18,12 @@ class CreateReview
         $review = DB::transaction(function () use ($payment): Review {
             $lockedPayment = Payment::query()->lockForUpdate()->findOrFail($payment->getKey());
 
+            if ($lockedPayment->status === PaymentStatus::Refunded) {
+                throw ValidationException::withMessages([
+                    'payment_id' => ['This payment has been refunded.'],
+                ]);
+            }
+
             if ($lockedPayment->status !== PaymentStatus::Verified) {
                 throw ValidationException::withMessages([
                     'payment_id' => ['This payment has not been verified.'],

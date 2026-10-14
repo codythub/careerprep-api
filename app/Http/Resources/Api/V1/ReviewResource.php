@@ -28,7 +28,7 @@ class ReviewResource extends JsonResource
             'recommendations' => $this->recommendations,
             'failure_reason' => $this->failure_reason,
             'attempts' => $this->attempts,
-            'max_attempts' => config('reviews.max_attempts'),
+            'max_attempts' => $this->maxAttempts(),
             'can_retry' => $this->isRetryable(),
             'disclaimer' => Review::DISCLAIMER,
             'completed_at' => $this->completed_at?->toISOString(),

@@ -13,12 +13,13 @@
 - Paystack transaction initialization and server-side verification using Laravel's HTTP client.
 - HMAC-SHA512 Paystack webhook validation and idempotent payment updates.
 - One-use review entitlements with transactional locking and database uniqueness.
-- Synchronous PDF text extraction with persisted pending/succeeded/failed status.
+- Synchronous PDF text extraction (smalot/pdfparser) with UTF-8 sanitising, a readability check, and persisted pending/succeeded/failed status.
 - Versioned `rule-based-v1` resume assessment with category scores, weaknesses, and recommendations.
 - Candidate-owned review results, history, and plain-text downloads.
 - Full automated suite verified in randomized order: 45 tests and 198 assertions passing on 2026-10-03.
 - 2026-10-13 frontend-integration audit: added `GET /payments` (with `?reference=` lookup), `GET /payments/{payment}`, `GET /reviews?resume_id=`, and CORS exposure of `Content-Disposition`. Suite: 50 tests, 235 assertions passing. Contract: `docs/FRONTEND_API.md`.
 - 2026-10-13 production readiness: git repository initialised; review retry/recovery policy (`POST /reviews/{review}/retry`, `REVIEW_MAX_ATTEMPTS`, `reviews.attempts` column); payments refused for unreadable resumes; public `GET /pricing`; configurable Sanctum expiry (`SANCTUM_EXPIRATION`, default 7 days) with `expires_at` in auth responses; multi-origin CORS with staging-only Vercel previews. Suite: 73 tests, 361 assertions passing. Deployment steps: `docs/DEPLOYMENT_CHECKLIST.md`.
+- 2026-10-14 admin API: `users.role` + `careerprep:make-admin` command, `EnsureAdmin` middleware, 15 routes under `/api/v1/admin` (stats, users, resumes + audited PDF download, payments + re-verify + mark-refunded, reviews + retry override + grant-attempt, audit log), `refunded` payment status, `reviews.extra_attempts`, `admin_audit_logs`. Suite: 164 tests, 744 assertions passing on SQLite and on a scratch PostgreSQL database.
 - Composer manifest and installed PHP platform requirements verified.
 
 ## Pending
@@ -29,7 +30,8 @@
 - Provide R2 credentials, bucket, and endpoint; then set `RESUME_DISK=r2`.
 - Provide Paystack secret key, review price, currency, callback URL, and webhook URL.
 - Fix the frontend mismatches listed at the end of `docs/FRONTEND_API.md`.
-- Product decision on the admin panel and public site (below), then admin authorization in Laravel.
+- Product decision on the public site and its admin tools (below). The candidate-product admin API is built (2026-10-14).
+- Run the 2026-10-13 admin migrations on each environment and create the first admin with `php artisan careerprep:make-admin {email}`.
 - Vercel deployment configuration.
 
 ## Known blockers
@@ -43,7 +45,7 @@
 
 The candidate dashboard (`/dashboard/*`) is fully served by `/api/v1`. Everything else in `careerprep-ng` still reads/writes Prisma tables directly, and none of it exists in Laravel:
 
-- Admin authentication and roles: Laravel `users` has no role/admin column; no admin gate or endpoints exist. The frontend admin uses NextAuth sessions against the Prisma `User` table.
+- Admin authentication and roles: now provided by Laravel for the candidate product (`users.role`, `/api/v1/admin`, see `docs/FRONTEND_API.md`); the frontend admin still uses NextAuth sessions against the Prisma `User` table.
 - Admin panel data: resume orders (human-delivered workflow with statuses, assignee, deliverables, status history, internal notes), users (with role toggle), payments, jobs, employer submissions, job reports, testimonials, success stories, career guides, analytics, audit log, settings.
 - Public site data: job board, job categories, saved jobs/applications, apply-click tracking, career guides, success stories, testimonials, employer job submissions, sitemap.
 - Platform services: email (Resend), notifications, daily cron, DB-backed rate limiting, analytics events.
@@ -52,10 +54,12 @@ The Prisma `ResumeOrder`/`Payment` model (human review, statuses PENDING_PAYMENT
 
 ## Known limitations
 
-- Composer network access was unavailable, so a third-party pure-PHP PDF parser could not be installed. The current native extractor intentionally supports common uncompressed and Flate-compressed text streams only; encrypted and unsupported PDFs are recorded as failed.
+- PDF extraction uses `smalot/pdfparser`; scanned/image-only and encrypted PDFs are recorded as failed (no OCR). The original native extractor mis-decoded Identity-H fonts (Google Docs/Word exports), producing garbage text that was still assessed, and invalid UTF-8 that PostgreSQL rejected; both were fixed on 2026-10-13 with regression tests using generated PDF fixtures (`tests/Support/PdfFixture.php`).
+- Tests run on SQLite, which accepts invalid UTF-8; PostgreSQL does not. Encoding issues must be covered by explicit tests.
+- The rule-based assessor only recognises "summary"-style headings for the professional summary category; resumes headed "Profile" score 0 there.
 - Failed reviews can be retried up to `REVIEW_MAX_ATTEMPTS`; beyond that, refunds are manual in the Paystack dashboard.
 - Assessment is synchronous and rule-based to avoid queues, Redis, and server-specific workers in V1.
 
 ## Current state
 
-The API exposes 21 routes under `/api/v1`. The implementation is verified with in-memory SQLite tests and isolated Paystack HTTP fakes, while Laravel's runtime database configuration resolves to `pgsql`. Runtime PostgreSQL, Paystack, and R2 integrations remain intentionally unverified until real connection details are supplied.
+The API exposes 36 routes under `/api/v1` (21 candidate/public, 15 admin). The implementation is verified with in-memory SQLite tests and isolated Paystack HTTP fakes, while Laravel's runtime database configuration resolves to `pgsql`. Runtime PostgreSQL, Paystack, and R2 integrations remain intentionally unverified until real connection details are supplied.

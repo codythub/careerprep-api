@@ -4,7 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\ResumeAssessor;
 use App\Contracts\ResumeTextExtractor;
-use App\Services\NativePdfTextExtractor;
+use App\Services\PdfParserTextExtractor;
 use App\Services\RuleBasedResumeAssessor;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -19,7 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(ResumeTextExtractor::class, NativePdfTextExtractor::class);
+        $this->app->bind(ResumeTextExtractor::class, PdfParserTextExtractor::class);
         $this->app->bind(ResumeAssessor::class, RuleBasedResumeAssessor::class);
     }
 

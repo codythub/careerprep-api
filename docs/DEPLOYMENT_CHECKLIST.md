@@ -24,7 +24,7 @@ Vercel preview deployments should never call the production API. CORS ignores th
   - `pdo_pgsql`
   - `mbstring`
   - `openssl`
-  - `zlib` (required to read Flate-compressed PDFs)
+  - `zlib` and `iconv` (required by `smalot/pdfparser` to read compressed PDFs and font encodings)
   - `curl`
   - `fileinfo`
 - [ ] `composer install --no-dev --optimize-autoloader`
@@ -56,6 +56,8 @@ Vercel preview deployments should never call the production API. CORS ignores th
 - [ ] **Verify (not yet done anywhere):**
   - Register, upload, pay with test keys, and review end to end against PostgreSQL.
   - Check that two simultaneous `POST /reviews` calls for one payment produce exactly one review. The tests cannot exercise PostgreSQL row locks because they run on SQLite.
+
+- [ ] Create the first admin after migrating: run `php artisan careerprep:make-admin <email>` on the server. It creates the account (name and password at hidden prompts), or promotes an existing one. Use `--revoke` to remove access (this also signs that user out everywhere). Keep the number of admins small, and review `GET /api/v1/admin/audit-log` periodically.
 
 ## 4. Private resume storage (Cloudflare R2)
 

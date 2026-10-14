@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Http\Controllers\Api\V1;
 
+use App\Contracts\ResumeTextExtractor;
 use App\Models\Resume;
 use App\Models\User;
 use App\ResumeExtractionStatus;
+use App\Services\ExtractResumeText;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
+use Tests\Support\PdfFixture;
 use Tests\TestCase;
 
 class ResumeExtractionTest extends TestCase
@@ -19,11 +23,8 @@ class ResumeExtractionTest extends TestCase
         Storage::fake('resumes');
         config()->set('filesystems.resume_disk', 'resumes');
         $user = User::factory()->create();
-        $pdf = UploadedFile::fake()->createWithContent('resume.pdf', $this->readablePdf());
 
-        $response = $this->actingAs($user, 'sanctum')->post('/api/v1/resumes', [
-            'resume' => $pdf,
-        ], ['Accept' => 'application/json']);
+        $response = $this->upload($user, PdfFixture::simple($this->resumeLines()));
 
         $response
             ->assertCreated()
@@ -38,21 +39,32 @@ class ResumeExtractionTest extends TestCase
         $this->assertNotNull($resume->extracted_at);
     }
 
-    public function test_upload_persists_failed_status_when_pdf_text_cannot_be_extracted(): void
+    public function test_google_docs_style_pdf_with_identity_h_fonts_is_extracted_as_real_text(): void
     {
         Storage::fake('resumes');
         config()->set('filesystems.resume_disk', 'resumes');
         $user = User::factory()->create();
-        $pdf = UploadedFile::fake()->createWithContent(
-            'encrypted.pdf',
-            "%PDF-1.4\ntrailer\n<< /Encrypt 1 0 R >>\n%%EOF",
-        );
 
-        $response = $this->actingAs($user, 'sanctum')->post('/api/v1/resumes', [
-            'resume' => $pdf,
-        ], ['Accept' => 'application/json']);
+        $this->upload($user, PdfFixture::identityH($this->resumeLines()))
+            ->assertCreated()
+            ->assertJsonPath('data.extraction_status', 'succeeded');
 
-        $response
+        $text = Resume::query()->sole()->extracted_text;
+
+        $this->assertTrue(mb_check_encoding($text, 'UTF-8'));
+        $this->assertStringContainsString('John Candidate', $text);
+        $this->assertStringContainsString('john@example.com', $text);
+        $this->assertStringContainsString('Senior Backend Engineer, Example Ltd (2021 – 2026)', $text);
+        $this->assertStringContainsString('EDUCATION', $text);
+    }
+
+    public function test_upload_persists_failed_status_when_pdf_cannot_be_parsed(): void
+    {
+        Storage::fake('resumes');
+        config()->set('filesystems.resume_disk', 'resumes');
+        $user = User::factory()->create();
+
+        $this->upload($user, "%PDF-1.4\ntrailer\n<< /Encrypt 1 0 R >>\n%%EOF")
             ->assertCreated()
             ->assertJsonPath('data.extraction_status', 'failed')
             ->assertJsonPath('data.extraction_error', 'Text could not be extracted from this PDF.');
@@ -64,30 +76,81 @@ class ResumeExtractionTest extends TestCase
         $this->assertNull($resume->extracted_at);
     }
 
-    private function readablePdf(): string
+    public function test_pdf_with_too_little_readable_text_is_marked_failed_instead_of_assessed(): void
     {
-        return <<<'PDF'
-%PDF-1.4
-1 0 obj
-<< /Length 200 >>
-stream
-BT
-(John Candidate) Tj
-(john@example.com) Tj
-(PROFESSIONAL SUMMARY) Tj
-(Backend engineer focused on reliable applications.) Tj
-(WORK EXPERIENCE) Tj
-(Developed secure web services from 2020 to 2026.) Tj
-(EDUCATION) Tj
-(Bachelor of Science, Example University) Tj
-(SKILLS) Tj
-(PHP, Laravel, PostgreSQL, Docker, AWS) Tj
-ET
-endstream
-endobj
-trailer
-<< >>
-%%EOF
-PDF;
+        Storage::fake('resumes');
+        config()->set('filesystems.resume_disk', 'resumes');
+        $user = User::factory()->create();
+
+        $this->upload($user, PdfFixture::simple(['Scanned page 1', '#### ---- ####']))
+            ->assertCreated()
+            ->assertJsonPath('data.extraction_status', 'failed')
+            ->assertJsonPath('data.extraction_error', 'Not enough readable text was found in this PDF. Upload a text-based PDF, not a scanned image.');
+
+        $this->assertNull(Resume::query()->sole()->extracted_text);
+    }
+
+    public function test_text_made_mostly_of_symbols_is_marked_failed(): void
+    {
+        $user = User::factory()->create();
+        $resume = Resume::factory()->for($user)->create();
+        $this->fakeExtractor(str_repeat('ab ', 30).str_repeat('#%&*!?0123456789 ', 20));
+
+        $resume = app(ExtractResumeText::class)->handle($resume);
+
+        $this->assertSame(ResumeExtractionStatus::Failed, $resume->extraction_status);
+    }
+
+    public function test_invalid_utf8_bytes_are_removed_before_text_is_stored(): void
+    {
+        $user = User::factory()->create();
+        $resume = Resume::factory()->for($user)->create();
+        $this->fakeExtractor(implode("\n", $this->resumeLines())."\x8d\x00 trailing\xC3 bytes");
+
+        $resume = app(ExtractResumeText::class)->handle($resume);
+
+        $this->assertSame(ResumeExtractionStatus::Succeeded, $resume->extraction_status);
+        $this->assertTrue(mb_check_encoding($resume->extracted_text, 'UTF-8'));
+        $this->assertStringNotContainsString("\x00", $resume->extracted_text);
+        $this->assertStringContainsString('John Candidate', $resume->extracted_text);
+    }
+
+    private function fakeExtractor(string $text): void
+    {
+        $this->app->instance(ResumeTextExtractor::class, new class($text) implements ResumeTextExtractor
+        {
+            public function __construct(private string $text) {}
+
+            public function extract(Resume $resume): string
+            {
+                return $this->text;
+            }
+        });
+    }
+
+    /** @return list<string> */
+    private function resumeLines(): array
+    {
+        return [
+            'John Candidate',
+            'john@example.com | +234 801 234 5678',
+            'PROFESSIONAL SUMMARY',
+            'Backend engineer focused on reliable applications and measurable delivery outcomes.',
+            'WORK EXPERIENCE',
+            'Senior Backend Engineer, Example Ltd (2021 – 2026)',
+            'Developed secure web services that reduced response times by 35 percent.',
+            'Led a team of four engineers delivering payment integrations.',
+            'EDUCATION',
+            'Bachelor of Science in Computer Science, Example University',
+            'SKILLS',
+            'PHP, Laravel, PostgreSQL, Docker, AWS, Testing',
+        ];
+    }
+
+    private function upload(User $user, string $contents): TestResponse
+    {
+        return $this->actingAs($user, 'sanctum')->post('/api/v1/resumes', [
+            'resume' => UploadedFile::fake()->createWithContent('resume.pdf', $contents),
+        ], ['Accept' => 'application/json']);
     }
 }
